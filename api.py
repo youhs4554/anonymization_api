@@ -11,19 +11,17 @@ import json
 app = Flask(__name__)
 CORS(app)
 
-r = redis.StrictRedis(
-        host="0.0.0.0", port=6379
-    )  # Connect to local Redis instance
+r = redis.StrictRedis(host="0.0.0.0", port=6379)  # Connect to local Redis instance
 
 EXTS = [".zip", ".tar", ".tar.gz", ".gz"]
 
 UNCOMPRESS_COMMNADS_DICT = {
     ".zip": lambda src, tgt: f'bsdtar --strip-components=1 -xvf {src} -C "{tgt}"',
-    ".tar": lambda src, tgt: f'tar -xvzf {src} -C "{tgt}" --strip-components=2',
+    ".tar": lambda src, tgt: f'tar -xvzf {src} -C "{tgt}" --strip-components=1',
 }
 SAVE_DIR = "upload"
 
-# "python run.py --INPUT_ROOT /Users/hossay/Documents/dicom_anonymization_server/upload/20200615_210754 --ANONYM_DCM_ROOT /Users/hossay/Documents/dicom_anonymization_server/upload/20200615_210754_ffuck --TABLE_PATH abc.xlsx --disable_suv --save_table --VERBOSE"
+
 def event_stream():
     pub = r.pubsub()
     pub.subscribe("sse_example_channel")
@@ -91,6 +89,6 @@ def upload_file():
 if __name__ == "__main__":
     if not os.path.exists("upload"):
         os.system("mkdir -p upload")
-    
+
     app.run(host="0.0.0.0", debug=True)
 
