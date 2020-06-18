@@ -7,6 +7,8 @@ import subprocess
 from tools.annonymizer import Annonymizer
 import redis
 import json
+import random
+import string
 
 app = Flask(__name__)
 CORS(app)
@@ -53,13 +55,19 @@ def upload_file():
     if request.method == "POST":
         f = request.files["file"]
         fname = os.path.join(SAVE_DIR, secure_filename(f.filename))
+        fname, ext = os.path.splitext(fname)
+        # generate random text
+        char_set = string.ascii_lowercase + string.digits
+        userId   = ''.join(random.sample(char_set*8, 8))
+
+        fname += datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + userId + ext
         f.save(fname)
         ext = os.path.splitext(fname)[1]
         if ext in [".gz", ".tar.gz", ".tgz"]:
             ext = ".gz"
 
         cmd = UNCOMPRESS_COMMNADS_DICT.get(ext)
-        tgt_dir = os.path.join(SAVE_DIR, datetime.now().strftime("%Y%m%d_%H%M%S"))
+        tgt_dir = os.path.join(SAVE_DIR, os.path.basename(os.path.splitext(fname)[0]))
         os.system(f'mkdir -p "{tgt_dir}"')
 
         cmd = cmd(src=fname, tgt=tgt_dir)
