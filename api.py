@@ -13,11 +13,12 @@ CORS(app)
 
 r = redis.StrictRedis(host="0.0.0.0", port=6379)  # Connect to local Redis instance
 
-EXTS = [".zip", ".tar", ".tar.gz", ".gz"]
+EXTS = [".zip", ".tar", ".tar.gz", ".gz", ".tgz"]
 
 UNCOMPRESS_COMMNADS_DICT = {
     ".zip": lambda src, tgt: f'bsdtar --strip-components=1 -xvf {src} -C "{tgt}"',
-    ".tar": lambda src, tgt: f'tar -xvzf {src} -C "{tgt}" --strip-components=1',
+    ".tar": lambda src, tgt: f'tar -xvf {src} -C "{tgt}" --strip-components=2',
+    ".gz": lambda src, tgt: f'tar -xvzf {src} -C "{tgt}" --strip-components=2',
 }
 SAVE_DIR = "upload"
 
@@ -54,8 +55,8 @@ def upload_file():
         fname = os.path.join(SAVE_DIR, secure_filename(f.filename))
         f.save(fname)
         ext = os.path.splitext(fname)[1]
-        if ext in [".gz", ".tar", ".tar.gz"]:
-            ext = ".tar"
+        if ext in [".gz", ".tar.gz", ".tgz"]:
+            ext = ".gz"
 
         cmd = UNCOMPRESS_COMMNADS_DICT.get(ext)
         tgt_dir = os.path.join(SAVE_DIR, datetime.now().strftime("%Y%m%d_%H%M%S"))
