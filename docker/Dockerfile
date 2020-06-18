@@ -26,6 +26,8 @@ RUN git clone https://github.com/youhs4554/anonymization_api.git
 # 작업 디렉토리로 이동
 WORKDIR /anonymization_api
 
+RUN mkdir -p upload
+
 # 작업 디렉토리에 있는 requirements.txt로 패키지 설치
 RUN pip3 install -r requirements.txt -i http://ftp.daumkakao.com/pypi/simple --trusted-host ftp.daumkakao.com
 
