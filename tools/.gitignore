@@ -1,0 +1,7 @@
+*.pyc
+*.nrrd
+*.dcm
+*.vscode
+*.xlsx
+data/*
+lib/*
