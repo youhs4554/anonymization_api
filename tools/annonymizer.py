@@ -5,14 +5,16 @@ import os
 from natsort import natsorted
 import numpy as np
 from tqdm import tqdm
+import json
 
 
 class Annonymizer:
     TARGET_ELEMENTS = ["PatientAge", "PatientBirthDate", "PatientID", "PatientName"]
 
     def __init__(
-        self, root, anm_root, table_path=None, disable_suv=True, verbose=True,
+        self, redis, root, anm_root, table_path=None, disable_suv=True, verbose=True,
     ):
+        self.redis = redis
         self.root = root
         self.anm_root = anm_root
         # directory for raw anonymized dcms
@@ -30,25 +32,9 @@ class Annonymizer:
         meta_data.HospNo = np.char.zfill(meta_data.HospNo.values.astype(str), 32)
 
         self.meta_data = meta_data
+        self.global_step = [1]
 
     def run(self):
-        """
-        from multiprocessing.pool import ThreadPool
-        import time
-        from tqdm import tqdm
-
-        def job():
-            time.sleep(1)
-            pbar.update()
-
-        pool = ThreadPool(5)
-        with tqdm(total=100) as pbar:
-            for i in range(100):
-                pool.apply_async(job)
-            pool.close()
-            pool.join()
-        """
-
         pool = ThreadPool(8)
         nfolders = len(self.input_folders)
 
@@ -68,17 +54,23 @@ class Annonymizer:
 
                 runner(
                     infold,
+                    redis=self.redis,
                     root=self.root,
                     anm_root=self.anm_root,
                     target_elements=self.TARGET_ELEMENTS,
                     meta_data=self.meta_data,
                     disable_suv=self.disable_suv,
                     verbose=self.verbose,
-                    pbar=pbar,
+                    global_step=self.global_step,
                 )
                 pbar.update()
 
                 remaining_time = (nfolders - i) * pbar.avg_time
+                event = "myevent"  # unused
+
+                data = {"unzip": None, "remaining_time": remaining_time}
+                self.redis.publish("sse_example_channel", json.dumps([event, data]))
+
                 print(f"{i+1}/{nfolders}, remainTime : {remaining_time}")
 
                 # write on db

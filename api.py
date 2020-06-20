@@ -1,3 +1,5 @@
+# -*- coding:utf-8 -*-
+
 from flask import Flask, request, g, jsonify, Response
 from werkzeug.utils import secure_filename
 import os
@@ -9,6 +11,8 @@ import redis
 import json
 import random
 import string
+import subprocess
+from flask import _app_ctx_stack
 
 app = Flask(__name__)
 CORS(app)
@@ -18,11 +22,15 @@ r = redis.StrictRedis(host="0.0.0.0", port=6379)  # Connect to local Redis insta
 EXTS = [".zip", ".tar", ".tar.gz", ".gz", ".tgz"]
 
 UNCOMPRESS_COMMNADS_DICT = {
-    ".zip": lambda src, tgt: f'bsdtar --strip-components=1 -xvf {src} -C "{tgt}"',
-    ".tar": lambda src, tgt: f'tar -xvf {src} -C "{tgt}" --strip-components=2',
-    ".gz": lambda src, tgt: f'tar -xvzf {src} -C "{tgt}" --strip-components=2',
+    ".zip": lambda src, tgt, strip_level: f'bsdtar --strip-components={strip_level} -xvf {src} -C "{tgt}"',
+    ".tar": lambda src, tgt, strip_level: f'tar -xvf {src} -C "{tgt}" --strip-components={strip_level}',
+    ".gz": lambda src, tgt, strip_level: f'tar -xvzf {src} -C "{tgt}" --strip-components={strip_level}',
 }
-SAVE_DIR = "upload"
+ORIGIN_DIR = "upload/origin"
+ANONY_DIR = "upload/anonymous"
+
+for x in [ORIGIN_DIR, ANONY_DIR]:
+    os.system(f"mkdir -p {x}")
 
 
 def event_stream():
@@ -31,6 +39,7 @@ def event_stream():
     for msg in pub.listen():
         if msg["type"] != "subscribe":
             event, data = json.loads(msg["data"])
+            data = json.dumps(data)
             yield "event: {0}\ndata: {1}\n\n".format(event, data)
         else:
             yield "data: {0}\n\n".format(msg["data"])
@@ -41,36 +50,40 @@ def get_pushes():
     return Response(event_stream(), mimetype="text/event-stream")
 
 
-@app.route("/api/v1.0/publish")
-def publish_data():
-    event = "myevent"  # unused
-    data = "1234"  # TDOO. retrieve current status & remaining time
-    r.publish("sse_example_channel", json.dumps([event, data]))
-
-    return "Published"
-
-
 @app.route("/api/v1.0/anonymization", methods=["GET", "POST"])
 def upload_file():
     if request.method == "POST":
         f = request.files["file"]
-        fname = os.path.join(SAVE_DIR, secure_filename(f.filename))
-        fname, ext = os.path.splitext(fname)
+
         # generate random text
         char_set = string.ascii_lowercase + string.digits
-        userId   = ''.join(random.sample(char_set*8, 8))
+        userId = "".join(random.sample(char_set * 8, 8))
 
-        fname += datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + userId + ext
+        ext = os.path.splitext(f.filename)[-1]
+
+        fname = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + userId + ext
+        fname = os.path.join(ORIGIN_DIR, fname)
         f.save(fname)
         ext = os.path.splitext(fname)[1]
         if ext in [".gz", ".tar.gz", ".tgz"]:
             ext = ".gz"
 
         cmd = UNCOMPRESS_COMMNADS_DICT.get(ext)
-        tgt_dir = os.path.join(SAVE_DIR, os.path.basename(os.path.splitext(fname)[0]))
+        tgt_dir = os.path.join(ORIGIN_DIR, os.path.basename(os.path.splitext(fname)[0]))
         os.system(f'mkdir -p "{tgt_dir}"')
 
-        cmd = cmd(src=fname, tgt=tgt_dir)
+        mycmd = f"bsdtar -tvzf {fname}"
+        output = subprocess.getoutput(mycmd)
+        output = [line.split(" ")[-1] for line in output.split("\n")]
+        output = list(filter(lambda line: line.endswith(".dcm"), output))
+        dname = os.path.dirname(output[0].split(" ")[-1])
+        strip_level = dname.count("/")
+        cmd = cmd(src=fname, tgt=tgt_dir, strip_level=strip_level)
+
+        event = "myevent"  # unused
+        data = {"unzip": None}
+        r.publish("sse_example_channel", json.dumps([event, data]))
+
         # step 1 : unzip file
         os.system(cmd)
 
@@ -81,23 +94,25 @@ def upload_file():
         # step 2 : remove original file
         os.system(f"rm {fname}")
 
-        tgt_dir = os.path.abspath(tgt_dir)
+        anm_root = os.path.join(ANONY_DIR, os.path.basename(os.path.splitext(fname)[0]))
 
         # step 3 : run anonymization scripts
         Annonymizer(
+            redis=r,
             root=tgt_dir,
-            anm_root=tgt_dir + "_process",
-            table_path=os.path.join(tgt_dir + "_process", "Table.xlsx"),
+            anm_root=anm_root,
+            table_path=os.path.join(anm_root, "Table.xlsx"),
             disable_suv=True,
             verbose=False,
         ).run()
+
+        # step 4 : 분할 압축
+
+        # step 5 : forces user to download resulting file
 
         return "파일 업로드 성공!"
 
 
 if __name__ == "__main__":
-    if not os.path.exists("upload"):
-        os.system("mkdir -p upload")
-
     app.run(host="0.0.0.0", debug=True)
 

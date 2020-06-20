@@ -4,3 +4,4 @@ upload/*
 .vscode/*
 *.rdb
 __pycache__*
+upload

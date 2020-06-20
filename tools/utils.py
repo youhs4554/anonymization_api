@@ -189,13 +189,14 @@ def anonymize(dataset, data_elements, replacement_str="anonymous"):
 
 def runner(
     infold,
+    redis,
     root,
     anm_root,
     target_elements,
     meta_data,
     disable_suv=True,
     verbose=True,
-    pbar=None,
+    global_step=[0],
 ):
     filename_list = natsorted(glob.glob(infold + "/*"))
     # run SUVFactorCalculator
@@ -204,8 +205,14 @@ def runner(
         suv_slices = []
 
     # anonymize and save as .dcm
+    tot = len(glob.glob(os.path.join(root, "*", "*")))
+
     try:
         for i in range(len(filename_list)):
+            import time
+
+            t0 = time.time()
+
             filename = filename_list[i]
             try:
                 dataset = pydicom.dcmread(filename)
@@ -246,6 +253,16 @@ def runner(
             if verbose:
                 for de in target_elements:
                     print(filename, dataset.data_element(de))
+
+            elapsed_time = time.time() - t0
+            remaining_time = (tot - global_step[0]) * elapsed_time
+            percent = min(100.0, 100 * float(global_step[0] / tot))
+
+            event = "myevent"  # unused
+            data = {"remaining_time": remaining_time, "percent": percent}
+            redis.publish("sse_example_channel", json.dumps([event, data]))
+
+            global_step[0] += 1
 
         if not disable_suv:
             suv_volume = sitk.GetImageFromArray(np.vstack(suv_slices)[::-1])
