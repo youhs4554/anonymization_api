@@ -12,9 +12,17 @@ class Annonymizer:
     TARGET_ELEMENTS = ["PatientAge", "PatientBirthDate", "PatientID", "PatientName"]
 
     def __init__(
-        self, redis, root, anm_root, table_path=None, disable_suv=True, verbose=True,
+        self,
+        redis,
+        eventId,
+        root,
+        anm_root,
+        table_path=None,
+        disable_suv=True,
+        verbose=True,
     ):
         self.redis = redis
+        self.eventId = eventId
         self.root = root
         self.anm_root = anm_root
         # directory for raw anonymized dcms
@@ -32,7 +40,8 @@ class Annonymizer:
         meta_data.HospNo = np.char.zfill(meta_data.HospNo.values.astype(str), 32)
 
         self.meta_data = meta_data
-        self.global_step = [1]
+        self.global_step = [0]
+        self.global_elapsed_time = [0.0]
 
     def run(self):
         pool = ThreadPool(8)
@@ -55,6 +64,7 @@ class Annonymizer:
                 runner(
                     infold,
                     redis=self.redis,
+                    eventId=self.eventId,
                     root=self.root,
                     anm_root=self.anm_root,
                     target_elements=self.TARGET_ELEMENTS,
@@ -62,19 +72,9 @@ class Annonymizer:
                     disable_suv=self.disable_suv,
                     verbose=self.verbose,
                     global_step=self.global_step,
+                    global_elapsed_time=self.global_elapsed_time,
                 )
                 pbar.update()
-
-                remaining_time = (nfolders - i) * pbar.avg_time
-                event = "myevent"  # unused
-
-                data = {"unzip": None, "remaining_time": remaining_time}
-                self.redis.publish("sse_example_channel", json.dumps([event, data]))
-
-                print(f"{i+1}/{nfolders}, remainTime : {remaining_time}")
-
-                # write on db
-                ### will be db exec code!
 
             pool.close()
             pool.join()

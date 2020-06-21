@@ -17,6 +17,11 @@ import pandas as pd
 import numpy as np
 from multiprocessing import Pool
 import SimpleITK as sitk
+import datetime
+
+
+def publish_message(r, data, event="myevent"):
+    r.publish("sse_example_channel", json.dumps([event, data]))
 
 
 def fetch_file_from_google_drive(file_map, file_id):
@@ -133,10 +138,16 @@ import pydicom
 import argparse
 
 
-def file_sanity_check(filename, data_elements, replacement_str="anonymous"):
+def file_sanity_check(filename_org, data_elements, replacement_str="anonymous"):
+    filename = filename_org.replace(
+        "\\", ""
+    )  # remove double quotes to deal with white space
     try:
         dataset = pydicom.dcmread(filename)
     except:
+        import ipdb
+
+        ipdb.set_trace()
         print(f"{filename} is not valid dicom file!")
         return False
 
@@ -190,6 +201,7 @@ def anonymize(dataset, data_elements, replacement_str="anonymous"):
 def runner(
     infold,
     redis,
+    eventId,
     root,
     anm_root,
     target_elements,
@@ -197,6 +209,7 @@ def runner(
     disable_suv=True,
     verbose=True,
     global_step=[0],
+    global_elapsed_time=[0.0],
 ):
     filename_list = natsorted(glob.glob(infold + "/*"))
     # run SUVFactorCalculator
@@ -255,14 +268,26 @@ def runner(
                     print(filename, dataset.data_element(de))
 
             elapsed_time = time.time() - t0
-            remaining_time = (tot - global_step[0]) * elapsed_time
-            percent = min(100.0, 100 * float(global_step[0] / tot))
-
-            event = "myevent"  # unused
-            data = {"remaining_time": remaining_time, "percent": percent}
-            redis.publish("sse_example_channel", json.dumps([event, data]))
 
             global_step[0] += 1
+            global_elapsed_time[0] += elapsed_time
+
+            percent = min(100.0, 100 * float(global_step[0] / tot))
+            estimated_time = tot * (global_elapsed_time[0] / global_step[0])
+
+            publish_message(
+                redis,
+                data={
+                    "elpased_time": str(
+                        datetime.timedelta(seconds=round(global_elapsed_time[0]))
+                    ),
+                    "estimated_time": str(
+                        datetime.timedelta(seconds=round(estimated_time))
+                    ),
+                    "percent": percent,
+                },
+                event=eventId,
+            )
 
         if not disable_suv:
             suv_volume = sitk.GetImageFromArray(np.vstack(suv_slices)[::-1])
