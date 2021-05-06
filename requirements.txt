@@ -11,7 +11,7 @@ decorator==4.4.2
 et-xmlfile==1.0.1
 flake8==3.8.3
 Flask==1.1.2
-Flask-Cors==3.0.8
+Flask-Cors==3.0.9
 Flask-SSE==0.2.1
 gevent==20.6.1
 googledrivedownloader==0.4
